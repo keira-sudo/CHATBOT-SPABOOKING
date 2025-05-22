@@ -7,28 +7,39 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const sessions = {}; // mémoire simple par numéro
 
 module.exports = async (req, res) => {
-  // Réception de messages WhatsApp
   if (req.method === 'POST') {
     const body = req.body;
-    const message = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+
+    // 🔍 Log complet du webhook entrant
+    console.log('📩 Webhook reçu :', JSON.stringify(body, null, 2));
+
+    const message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+
+    // 🚫 Si pas de message (ex. : statut de livraison), on ignore
+    if (!message) {
+      console.log('ℹ️ Aucun message utilisateur détecté.');
+      res.sendStatus(200);
+      return;
+    }
+
     const from = message?.from;
     const msg_body = message?.text?.body?.trim();
 
     if (msg_body && from) {
-      // Crée une session utilisateur si elle n'existe pas
+      // 🔄 Initialiser la session utilisateur si nécessaire
       if (!sessions[from]) {
         sessions[from] = { step: 1 };
       }
 
       let reply = "❌ Réponse non comprise. Réponds par 1 ou 2.";
 
-      // Étape 1 : première question
+      // 👣 Étape 1
       if (sessions[from].step === 1) {
-        reply = `👋 Bonjour ! Merci d'avoir contacté SpaBooking,\nÊtes-vous :\n1. Un client particulier\n2. Un propriétaire d'institut de beauté ?`;
+        reply = `👋 Bonjour ! Merci d'avoir contacté SpaBooking,\nÊtes-vous :\n1. Un client particulier\n2. Un propriétaire d'institut de beauté\n`;
         sessions[from].step = 2;
       }
 
-      // Étape 2 : choix de profil
+      // 👣 Étape 2
       else if (sessions[from].step === 2) {
         if (msg_body === '1') {
           reply = "🧖 Merci ! Nous proposons des soins adaptés. Souhaitez-vous recevoir nos offres ?";
@@ -39,35 +50,40 @@ module.exports = async (req, res) => {
         }
       }
 
-      // (Exemple) Étape 3 : réponse suivante (ajoute d'autres suites si besoin)
+      // 👣 Étape 3
       else if (sessions[from].step === 3) {
-        reply = "Merci pour votre réponse ! Un membre de notre équipe vous contactera bientôt. 😊";
+        reply = "✅ Merci pour votre réponse ! Un membre de notre équipe vous contactera bientôt. 😊";
         sessions[from].step = 1; // reset si nécessaire
       }
 
-      // Envoie la réponse via l'API WhatsApp
+      // ✉️ Envoi de la réponse
       try {
-        await axios.post(`https://graph.facebook.com/v20.0/${phone_number_id}/messages`, {
-          messaging_product: 'whatsapp',
-          to: from,
-          text: { body: reply }
-        }, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
+        await axios.post(
+          `https://graph.facebook.com/v20.0/${phone_number_id}/messages`,
+          {
+            messaging_product: 'whatsapp',
+            to: from,
+            text: { body: reply }
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
           }
-        });
+        );
 
-        console.log('✅ Réponse envoyée à', from);
+        console.log('✅ Réponse envoyée à', from, ':', reply);
       } catch (error) {
-        console.error('❌ Erreur d’envoi :', error?.response?.data || error.message);
+        console.error('❌ Erreur lors de l’envoi :', error?.response?.data || error.message);
       }
     }
 
     res.sendStatus(200);
+    return;
   }
 
-  // Vérification du webhook par Meta (GET)
+  // 🔐 Vérification du webhook Meta
   else if (req.method === 'GET') {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -79,10 +95,9 @@ module.exports = async (req, res) => {
     } else {
       res.sendStatus(403);
     }
+    return;
   }
 
-  // Fallback si autre méthode
-  else {
-    res.send('✅ Webhook en ligne');
-  }
+  // 🧭 Pour autres requêtes (tests manuels)
+  res.send('✅ Webhook actif');
 };
